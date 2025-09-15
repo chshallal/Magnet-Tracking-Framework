@@ -1,6 +1,6 @@
 # Magnet Tracking Framework
 
-A Python framework for tracking magnetic dipoles using simulated sensor arrays. This system implements both Levenberg-Marquardt optimization and Extended Information Filter (INFO) approaches for real-time magnet position and orientation estimation.
+A Python framework for tracking magnet dipoles using simulated sensor arrays. This system implements both Levenberg-Marquardt (LM) optimization and Extended Information Filter (INFO) approaches for real-time magnet position and orientation estimation.
 
 ## Core Functions
 
@@ -34,9 +34,9 @@ jac[sensor_offset+a, magnet_offset+b] = (
 
 ### 3. `run_LM(initial_guess=None, ...)`
 
-**Purpose**: Performs Levenberg-Marquardt optimization for magnet parameter estimation.
+**Purpose**: Performs Levenberg-Marquardt (LM) optimization for magnet parameter estimation.
 
-**Algorithm**: Non-linear least squares optimization combining Gauss-Newton and gradient descent methods.
+**Algorithm**: Non-linear least squares optimization.
 
 **Usage Example**:
 ```python
@@ -53,7 +53,7 @@ optimal_params = system.run_LM(initial_guess=initial)
 
 ### 4. `run_EIF(initial_guess=None, ...)`
 
-**Purpose**: Implements Extended Information Filter for sequential Bayesian estimation.
+**Purpose**: Implements Extended Information Filter (INFO)
 
 **Filter Steps** (per iteration):
 1. **Prediction**: 
@@ -85,7 +85,7 @@ optimal_params = system.run_LM(initial_guess=initial)
 ### MagnetTrackingSystem Class
 
 **Initialization Parameters**:
-- `num_magnets`: Number of magnetic dipoles to track
+- `num_magnets`: Number of magnet dipoles to track
 - `num_boards`: Number of sensor boards
 - `scalar_m`: Magnetic moment magnitude
 - `is_euclid`: Use Euclidean notation
