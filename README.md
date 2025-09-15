@@ -55,13 +55,6 @@ optimal_params = system.run_LM(initial_guess=initial)
 
 **Purpose**: Implements Extended Information Filter for sequential Bayesian estimation.
 
-**Algorithm**: Information-form Kalman filtering for non-linear state estimation with process and measurement noise modeling.
-
-**State Model**:
-- **Process Model**: First-order Markov process with time constants τ_pos, τ_mom, τ_geo
-- **Measurement Model**: Non-linear magnetic field observations
-- **Noise Models**: Gaussian process and measurement noise
-
 **Filter Steps** (per iteration):
 1. **Prediction**: 
    ```python
@@ -135,35 +128,4 @@ eif_result = system.run_EIF(
     moving=False,
     verbose=2
 )
-```
-
-### Real-time Data Processing
-```python
-# Load data from file
-system = MagnetTrackingSystem(
-    file="sensor_data.csv",
-    num_magnets=1
-)
-
-# Sequential processing with EIF
-results = system.run_EIF(
-    iter=len(system.data),
-    moving=True,
-    plotting=True,
-    with_geo=True
-)
-```
-
-### Parameter Estimation Comparison
-```python
-# Compare LM and EIF performance
-lm_params = system.run_LM(verbose=1)
-eif_params, _, cov_matrix = system.run_EIF(
-    lm_guess=lm_params,
-    all_states=True
-)
-
-print(f"LM Final Estimate: {lm_params}")
-print(f"EIF Final Estimate: {eif_params[-1]}")
-print(f"EIF Uncertainty: {np.sqrt(np.diag(cov_matrix[-1]))}")
 ```
