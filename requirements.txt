@@ -1,0 +1,7 @@
+ipython>=8.0
+jupyter>=1.0
+matplotlib>=3.8
+multiprocess>=0.70
+numpy>=2.0
+scipy>=1.11
+tqdm>=4.66

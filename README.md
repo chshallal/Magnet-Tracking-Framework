@@ -2,6 +2,21 @@
 
 A Python framework for tracking magnet dipoles using simulated sensor arrays. This system implements both Levenberg-Marquardt (LM) optimization and Extended Information Filter (INFO) approaches for real-time magnet position and orientation estimation.
 
+## Publication
+
+This framework supports the magnetic tracking work described in [*A wireless magnetic implant system for continuous neuromuscular sensing*](https://www.medrxiv.org/content/10.1101/2025.11.17.25340274v1) a medRxiv preprint.
+
+## Demonstration
+
+[![Animated magnet tracking demonstration (real-time C++ implementation)](media/m01.gif)](media/m01.mp4)
+
+*Click the animation to open the MP4.*
+
+## Notebook Examples
+
+- [`Single-Magnet-Algorithm-Evaluation.ipynb`](<Notebook Examples/Single-Magnet-Algorithm-Evaluation.ipynb>) runs LM and INFO from matched initial guesses and compares their steady-state errors.
+- [`Two-Magnet-INFO-Tracking.ipynb`](<Notebook Examples/Two-Magnet-INFO-Tracking.ipynb>) uses INFO to estimate two magnet states at 40 mm distance separation. It includes convergence and estimation details.
+
 ## Core Functions
 
 ### 1. `evaluate_field(magnet_params)`

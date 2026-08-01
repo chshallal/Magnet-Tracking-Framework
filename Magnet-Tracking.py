@@ -847,16 +847,19 @@ class MagnetTrackingSystem:
                     phi = ((phi % 360) - 180*flip) % 360
                     phi -= 360*(phi > 180)
                 magnet_params[i*self.num_params+NUM_COMPS*(1-2*fixed_pos):(i+1)*(self.num_params-NUM_COMPS*fixed_pos)] = theta, phi
-        return magnet_params.reshape(-1, 1)
+        return magnet_params
     
     # Update the state vector for cost and Jacobian functions
     def update_state(self, state, curr_est, fixed_pos, fixed_moment, const_geo):
-        if not const_geo:
-            state[-NUM_COMPS:] = curr_est[-NUM_COMPS:]
+        n_half = len(curr_est) // 2
+        geo_len = NUM_COMPS if not const_geo else 0
+        if geo_len:
+            state[-geo_len:] = curr_est[n_half - geo_len:n_half]
         if not (fixed_pos and fixed_moment):
             indices = np.add.outer(self.num_params * np.arange(self.num_magnets), np.arange(NUM_COMPS if fixed_pos else 0, NUM_COMPS if fixed_moment else self.num_params)).ravel()
-            state[indices] = curr_est[:len(curr_est)//2-NUM_COMPS if not const_geo else len(curr_est)//2]
-        return state.reshape(-1, 1)
+            primary_end = n_half if const_geo else n_half - geo_len
+            state[indices] = curr_est[:primary_end]
+        return state
     
     # Update geomagnetic disturbance with IMU data
     def update_geo(self, curr_geo):
@@ -882,200 +885,193 @@ class MagnetTrackingSystem:
         R_inv = self.cholesky_inverse(self.R)
         state = deepcopy(state_ests[-1])
         # Run the Extended Information Filter
+        pbar = None
         try:
             if verbose > 0:
-                    pbar = tqdm(total=iter)
-                    pbar.clear()
-                if plotting:
-                    hdisplay_img1 = display(display_id='State Plot Display')
-                    hdisplay_img2 = display(display_id='Distance Plot Display')
-                
-                for i in range(iter):
-                    prev_est = curr_est
-                    for _ in range(1) if not moving else range(iters_per_iter[i]):
-                        # Prediction step
-                        curr_est = F.dot(curr_est)
-                        P = F.dot(P).dot(F.T) + G.dot(Q).dot(G.T)
-                        Y = self.cholesky_inverse(P)
-                        y = Y.dot(curr_est)
-                        # Adjust state vector for cost and Jacobian functions
-                        state = self.update_state(state, curr_est, fixed_pos, fixed_moment, const_geo)
-                        # Compute the residual
-                        residual = -self.cost_function(state, 'eif', with_geo, with_noise)
-                        # Compute the Jacobian
-                        H = self.kalman_jacobian_function(state, not const_geo, fixed_pos, fixed_moment)
-                        # Compute measurement covariance and measurement vector
-                        HTR_inv = H.T.dot(R_inv)
-                        S = HTR_inv.dot(H)
-                        s = HTR_inv.dot(residual + H.dot(curr_est))
-                        # Update the information matrix and information vector
-                        Y += S
-                        y += s
-                        P = self.cholesky_inverse(Y)
-                        curr_est = P.dot(y)
-                    if moving:
-                        self.update_data(self.iter + 1, with_geo)
+                pbar = tqdm(total=iter)
+                pbar.clear()
+            if plotting:
+                hdisplay_img1 = display(display_id='State Plot Display')
+                hdisplay_img2 = display(display_id='Distance Plot Display')
 
-                    # For plotting/debugging
-                    state = self.normalize_moments(self.update_state(state, curr_est, fixed_pos, fixed_moment, const_geo), normalize=True)
-                    state_ests = np.vstack((state_ests, state))
-                    Ps = np.vstack((Ps, [P]))
-                    ps = np.vstack((ps, [np.diag(P)[:N]]))
-                    norms.append(la.norm((curr_est - prev_est)[:N]))
-                    costs.append(la.norm(residual))
-                    traces.append(np.trace(P))
-                    if verbose > 0:
-                        pbar.update(1)
-                        pbar.set_description(f"Norm: {norms[-1]:.3e}, Cost: {costs[-1]:.3e}, Trace: {traces[-1]:.3e}")
-                    if plotting and (i+1) % plot_inter == 0:
-                        figs = self.plotting(states=state_ests[len(state_ests)-max(plot_inter, 20)+1:], running=True, with_true=True, moving=moving, show_dist=show_dist, start_idx=start_idx+len(state_ests)-max(plot_inter, 20)-1)
-                        hdisplay_img1.update(figs[0])
-                        if show_dist:
-                            time.sleep(0.1)
-                            hdisplay_img2.update(figs[1])
+            for i in range(iter):
+                prev_est = curr_est
+                for _ in range(1) if not moving else range(iters_per_iter[i]):
+                    # Prediction step
+                    curr_est = F.dot(curr_est)
+                    P = F.dot(P).dot(F.T) + G.dot(Q).dot(G.T)
+                    Y = self.cholesky_inverse(P)
+                    y = Y.dot(curr_est)
+                    # Adjust state vector for cost and Jacobian functions
+                    state = self.update_state(state, curr_est, fixed_pos, fixed_moment, const_geo)
+                    # Compute the residual
+                    residual = -self.cost_function(state, 'eif', with_geo, with_noise)
+                    # Compute the Jacobian
+                    H = self.kalman_jacobian_function(state, not const_geo, fixed_pos, fixed_moment)
+                    # Compute measurement covariance and measurement vector
+                    HTR_inv = H.T.dot(R_inv)
+                    S = HTR_inv.dot(H)
+                    s = HTR_inv.dot(residual + H.dot(curr_est))
+                    # Update the information matrix and information vector
+                    Y += S
+                    y += s
+                    P = self.cholesky_inverse(Y)
+                    curr_est = P.dot(y)
+                if moving:
+                    self.update_data(self.iter + 1, with_geo)
+
+                # For plotting/debugging
+                state = self.normalize_moments(self.update_state(state, curr_est, fixed_pos, fixed_moment, const_geo), normalize=True)
+                state_ests = np.vstack((state_ests, state))
+                Ps = np.vstack((Ps, [P]))
+                ps = np.vstack((ps, [np.diag(P)[:N]]))
+                norms.append(la.norm((curr_est - prev_est)[:N]))
+                costs.append(la.norm(residual))
+                traces.append(np.trace(P))
+                if verbose > 0:
+                    pbar.update(1)
+                    pbar.set_description(f"Norm: {norms[-1]:.3e}, Cost: {costs[-1]:.3e}, Trace: {traces[-1]:.3e}")
+                if plotting and (i+1) % plot_inter == 0:
+                    figs = self.plotting(states=state_ests[len(state_ests)-max(plot_inter, 20)+1:], running=True, with_true=True, moving=moving, show_dist=show_dist, start_idx=start_idx+len(state_ests)-max(plot_inter, 20)-1)
+                    hdisplay_img1.update(figs[0])
+                    if show_dist:
+                        time.sleep(0.1)
+                        hdisplay_img2.update(figs[1])
         except KeyboardInterrupt:
             print("\nInterrupted\n")
-                if not (len(state_ests) == len(Ps) == len(ps) and len(norms) == len(costs) == len(traces)):
-                    Ps = np.vstack((Ps, [P]))[:i+2]
-                    ps = np.vstack((ps, [np.diag(P)[:N]]))[:i+2]
-                    norms.append(la.norm((curr_est - prev_est)[:N]))
-                    norms = norms[:i+1]
-                    costs.append(la.norm(residual))
-                    costs = costs[:i+1]
-                    traces.append(np.trace(P))
-                    traces = traces[:i+1]
         except Exception as e:
             print(f"\nError: {e}\n")
             print(traceback.format_exc())
-            sys.exit(1)
+            raise
         finally:
-            if verbose > 0:
+            if pbar is not None:
                 pbar.close()
             if plotting:
                 plt.close()
-            if verbose == 2:
-                print(f"\nOptimal magnet parameters:\n {np.array2string(state_ests[-1][:N-NUM_COMPS*(not const_geo)].reshape(-1, self.num_params), separator=', ', precision=NUM_COMPS)}")
-                if with_geo:
-                    print(f"Geo Disturbance (µT): \n{np.array2string(state_ests[-1][-NUM_COMPS:] * (1 if self.scale_down else GEO_SCALE), separator=', ', precision=NUM_COMPS)}")
-                print()
-            return state_ests if all_states else state_ests[-1], changed_params, Ps if all_states else Ps[-1], ps, norms, costs, traces
+
+        if verbose == 2:
+            print(f"\nOptimal magnet parameters:\n {np.array2string(state_ests[-1][:N-NUM_COMPS*(not const_geo)].reshape(-1, self.num_params), separator=', ', precision=NUM_COMPS)}")
+            if with_geo:
+                print(f"Geo Disturbance (µT): \n{np.array2string(state_ests[-1][-NUM_COMPS:] * (1 if self.scale_down else GEO_SCALE), separator=', ', precision=NUM_COMPS)}")
+            print()
+        return state_ests if all_states else state_ests[-1], changed_params, Ps if all_states else Ps[-1], ps, norms, costs, traces
 
 ###################### SENSOR CLASS ######################
-    class Sensor:
-        def __init__(self, width, length=None, height=1, spacing=SENSOR_WIDTH, center=(0, 0, 0), angles=(0, 0)):
-            length = width if length is None else length
-            self.width = width
-            self.length = length
-            self.height = height
-            self.center = center
-            self.grid_size = self.width * self.length * self.height
-            # Set the sensor spacing
-            if not hasattr(spacing, "__len__"):
-                x_sp = y_sp = spacing
-                z_sp = 0
-            elif len(spacing) == 2:
-                x_sp = spacing[0]
-                y_sp = spacing[1]
-                z_sp = 0
-            elif len(spacing) == 3:
-                x_sp, y_sp, z_sp = spacing
-            else:
-                raise ValueError("Position standard deviation must be a scalar, pair, or triplet")
-            # Set the sensor positions
-            self.x_sp = x_sp
-            self.y_sp = y_sp
-            self.z_sp = z_sp
-            self.width_len = self.x_sp * (self.width - 1)
-            self.length_len = self.y_sp * (self.length - 1)
-            self.height_len = self.z_sp * (self.height - 1)
-            self.local_positions = self.grid()
-            # Sets the sensor and global positions and min/max values
-            self.change_rotation(angles)
+class Sensor:
+    def __init__(self, width, length=None, height=1, spacing=SENSOR_WIDTH, center=(0, 0, 0), angles=(0, 0)):
+        length = width if length is None else length
+        self.width = width
+        self.length = length
+        self.height = height
+        self.center = center
+        self.grid_size = self.width * self.length * self.height
+        # Set the sensor spacing
+        if not hasattr(spacing, "__len__"):
+            x_sp = y_sp = spacing
+            z_sp = 0
+        elif len(spacing) == 2:
+            x_sp = spacing[0]
+            y_sp = spacing[1]
+            z_sp = 0
+        elif len(spacing) == 3:
+            x_sp, y_sp, z_sp = spacing
+        else:
+            raise ValueError("Position standard deviation must be a scalar, pair, or triplet")
+        # Set the sensor positions
+        self.x_sp = x_sp
+        self.y_sp = y_sp
+        self.z_sp = z_sp
+        self.width_len = self.x_sp * (self.width - 1)
+        self.length_len = self.y_sp * (self.length - 1)
+        self.height_len = self.z_sp * (self.height - 1)
+        self.local_positions = self.grid()
+        # Sets the sensor and global positions and min/max values
+        self.change_rotation(angles)
 
-        # Return sensor information
-        def __str__(self):
-            s = ""
-            s += f"Center: {self.center}\n"
-            return s
+    # Return sensor information
+    def __str__(self):
+        s = ""
+        s += f"Center: {self.center}\n"
+        return s
 
-        # Print sensor information
-        def print_params(self):
-            s = ""
-            s += f"Number of Sensors: {self.grid_size}\n"
-            s += f"Sensor Board Size: {self.width} x {self.length} x {self.height} ({self.width_len} x {self.length_len} x {self.height_len} mm^3)\n"
-            s += f"Sensor Spacing: ({round(self.x_sp, NUM_COMPS)}, {round(self.y_sp, NUM_COMPS)}, {round(self.z_sp, NUM_COMPS)}) mm\n"
-            s += f"Min/Max Values: x: {self.x_min} to {self.x_max}, y: {self.y_min} to {self.y_max}, z: {self.z_min} to {self.z_max}\n"
-            return s
+    # Print sensor information
+    def print_params(self):
+        s = ""
+        s += f"Number of Sensors: {self.grid_size}\n"
+        s += f"Sensor Board Size: {self.width} x {self.length} x {self.height} ({self.width_len} x {self.length_len} x {self.height_len} mm^3)\n"
+        s += f"Sensor Spacing: ({round(self.x_sp, NUM_COMPS)}, {round(self.y_sp, NUM_COMPS)}, {round(self.z_sp, NUM_COMPS)}) mm\n"
+        s += f"Min/Max Values: x: {self.x_min} to {self.x_max}, y: {self.y_min} to {self.y_max}, z: {self.z_min} to {self.z_max}\n"
+        return s
 
-        # Generate a grid of sensor positions, centered at the origin, with a spacing of 2.5 mm
-        def grid(self):
-            sensor_positions = []
-            for y in range(self.length):
-                for z in range(self.height):
-                    for x in range(self.width):
-                        pos = np.round([self.x_sp * (x - (self.width - 1) * 0.5), self.y_sp * (y - (self.length - 1) * 0.5), self.z_sp * (z - (self.height - 1) * 0.5)], NUM_PARAMS)
-                        sensor_positions.append(pos)
-            return np.array(sensor_positions)
+    # Generate a grid of sensor positions, centered at the origin, with a spacing of 2.5 mm
+    def grid(self):
+        sensor_positions = []
+        for y in range(self.length):
+            for z in range(self.height):
+                for x in range(self.width):
+                    pos = np.round([self.x_sp * (x - (self.width - 1) * 0.5), self.y_sp * (y - (self.length - 1) * 0.5), self.z_sp * (z - (self.height - 1) * 0.5)], NUM_PARAMS)
+                    sensor_positions.append(pos)
+        return np.array(sensor_positions)
 
-        # Rotate the sensor positions based on theta and phi
-        def rotate(self):
-            sensor_positions = []
-            for pos in self.local_positions:
-                sensor_positions.append(np.round(self.rot.apply(pos), NUM_PARAMS))
-            return np.array(sensor_positions)
-        
-        # Change the rotation of the sensor positions
-        def change_rotation(self, angles_rot=(0, 0)):
-            if type(angles_rot) == Rot:
-                self.rot = angles_rot
-            else:
-                self.rot = Rot.from_euler('yz', angles_rot, degrees=True) if len(angles_rot) == 2 else Rot.from_euler('xyz', angles_rot, degrees=True)
-            self.normal = self.rot.apply([0, 0, 1])
-            self.rotated_positions = self.rotate()
-            self.global_positions = np.array([self.center + pos for pos in self.rotated_positions])
-            self.set_min_max()
-        
-        # Change the center of the sensor positions
-        def change_center(self, center=(0, 0, 0)):
-            self.center = center
-            self.global_positions = np.array([self.center + pos for pos in self.rotated_positions])
-            self.set_global_min_max()
+    # Rotate the sensor positions based on theta and phi
+    def rotate(self):
+        sensor_positions = []
+        for pos in self.local_positions:
+            sensor_positions.append(np.round(self.rot.apply(pos), NUM_PARAMS))
+        return np.array(sensor_positions)
 
-        # Stores min and max values for each axis of the sensor positions
-        def set_min_max(self):
-            self.x_min, self.y_min, self.z_min = np.min(self.local_positions, axis=0)
-            self.x_max, self.y_max, self.z_max = np.max(self.local_positions, axis=0)
-            self.set_global_min_max()
-        
-        # Stores min and max values for each axis of the global positions
-        def set_global_min_max(self):
-            self.global_x_min, self.global_y_min, self.global_z_min = self.rot.apply([self.x_min, self.y_min, self.z_min]) + self.center
-            self.global_x_max, self.global_y_max, self.global_z_max = self.rot.apply([self.x_max, self.y_max, self.z_max]) + self.center
-        
-        # Flip the sensor positions along an axis
-        def flip_pos(self, axis):
-            self.local_positions[:, axis] *= -1
-            self.rotated_positions = self.rotate()
-            self.global_positions = np.array([self.center + pos for pos in self.rotated_positions])
-            self.set_min_max()
-        
-        # Read the sensor positions from a data array or file
-        def read_local_positions(self, data):
-            if type(data) == str:
-                data = np.genfromtxt(data, delimiter=',', names=True)
-            
-            for i, x, y, z in data:
-                self.local_positions[int(i)] = np.array([x, y, z])*1e3
-            self.rotated_positions = self.rotate()
-            self.global_positions = np.array([self.center + pos for pos in self.rotated_positions])
-            self.set_min_max()
+    # Change the rotation of the sensor positions
+    def change_rotation(self, angles_rot=(0, 0)):
+        if type(angles_rot) == Rot:
+            self.rot = angles_rot
+        else:
+            self.rot = Rot.from_euler('yz', angles_rot, degrees=True) if len(angles_rot) == 2 else Rot.from_euler('xyz', angles_rot, degrees=True)
+        self.normal = self.rot.apply([0, 0, 1])
+        self.rotated_positions = self.rotate()
+        self.global_positions = np.array([self.center + pos for pos in self.rotated_positions])
+        self.set_min_max()
 
-        # Compute the magnetic field (T)
-        def field(self, moment_vector, position_vector):
-            r = position_vector
-            r_norm = la.norm(r)
-            if r_norm == 0:
-                return np.full(NUM_COMPS, np.inf)
-            r_hat = r / r_norm
-            B = (3 * r_hat.dot(moment_vector) * r_hat - moment_vector) / r_norm**3
-            return B
+    # Change the center of the sensor positions
+    def change_center(self, center=(0, 0, 0)):
+        self.center = center
+        self.global_positions = np.array([self.center + pos for pos in self.rotated_positions])
+        self.set_global_min_max()
+
+    # Stores min and max values for each axis of the sensor positions
+    def set_min_max(self):
+        self.x_min, self.y_min, self.z_min = np.min(self.local_positions, axis=0)
+        self.x_max, self.y_max, self.z_max = np.max(self.local_positions, axis=0)
+        self.set_global_min_max()
+
+    # Stores min and max values for each axis of the global positions
+    def set_global_min_max(self):
+        self.global_x_min, self.global_y_min, self.global_z_min = self.rot.apply([self.x_min, self.y_min, self.z_min]) + self.center
+        self.global_x_max, self.global_y_max, self.global_z_max = self.rot.apply([self.x_max, self.y_max, self.z_max]) + self.center
+
+    # Flip the sensor positions along an axis
+    def flip_pos(self, axis):
+        self.local_positions[:, axis] *= -1
+        self.rotated_positions = self.rotate()
+        self.global_positions = np.array([self.center + pos for pos in self.rotated_positions])
+        self.set_min_max()
+
+    # Read the sensor positions from a data array or file
+    def read_local_positions(self, data):
+        if type(data) == str:
+            data = np.genfromtxt(data, delimiter=',', names=True)
+
+        for i, x, y, z in data:
+            self.local_positions[int(i)] = np.array([x, y, z])*1e3
+        self.rotated_positions = self.rotate()
+        self.global_positions = np.array([self.center + pos for pos in self.rotated_positions])
+        self.set_min_max()
+
+    # Compute the magnetic field (T)
+    def field(self, moment_vector, position_vector):
+        r = position_vector
+        r_norm = la.norm(r)
+        if r_norm == 0:
+            return np.full(NUM_COMPS, np.inf)
+        r_hat = r / r_norm
+        B = (3 * r_hat.dot(moment_vector) * r_hat - moment_vector) / r_norm**3
+        return B
