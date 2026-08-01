@@ -1,0 +1,9 @@
+# Python bytecode and cache directories
+__pycache__/
+*.py[cod]
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# macOS metadata
+.DS_Store
