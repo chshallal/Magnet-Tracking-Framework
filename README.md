@@ -8,9 +8,13 @@ This framework supports the magnetic tracking work described in [*A wireless mag
 
 ## Demonstration
 
-[![Animated magnet tracking demonstration (real-time C++ implementation)](media/m01.gif)](media/m01.mp4)
+<p align="center">
+  <a href="media/m01.mp4">
+    <img src="media/m01.gif" alt="Animated magnet tracking demonstration (real-time C++ implementation)">
+  </a>
+</p>
 
-*Click the animation to open the MP4.*
+<p align="center"><em>Click the animation to open the MP4.</em></p>
 
 ## Notebook Examples
 
@@ -144,3 +148,7 @@ eif_result = system.run_EIF(
     verbose=2
 )
 ```
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
