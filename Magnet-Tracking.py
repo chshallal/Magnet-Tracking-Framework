@@ -956,6 +956,111 @@ class MagnetTrackingSystem:
             print()
         return state_ests if all_states else state_ests[-1], changed_params, Ps if all_states else Ps[-1], ps, norms, costs, traces
 
+###################### VISUALIZER CLASS ######################
+class Visualizer:
+    """Visualize sensor locations, magnets, and their modeled magnetic field."""
+
+    def __init__(self, mts):
+        self.mts = mts
+
+    def visualize(self, magnets=None, length=3, sensor_s=20, mag_s=60, alpha=None, with_geo=False, show=True):
+        if magnets is None:
+            if self.mts.true_params is None:
+                raise ValueError("No magnet state is available to visualize.")
+            magnets = deepcopy(self.mts.true_params)
+        magnets = np.asarray(magnets, dtype=float).ravel()
+        required_values = self.mts.num_magnets * self.mts.num_params
+        if magnets.size < required_values:
+            raise ValueError(
+                f"Expected at least {required_values} magnet state values, got {magnets.size}."
+            )
+        magnets = magnets[:required_values].reshape(self.mts.num_magnets, self.mts.num_params)
+
+        moment_vectors = (
+            magnets[:, NUM_COMPS:]
+            if self.mts.is_euclid
+            else self.mts.get_moment(magnets[:, NUM_COMPS:])
+        )
+        sensor_positions = self.mts.active_sensors_global_positions
+        field_vectors = self.mts.evaluate_field(magnets)
+        if with_geo:
+            field_vectors = field_vectors + self.mts.G_FIELD.reshape(1, -1) / GEO_SCALE
+
+        fig = plt.figure(figsize=(8, 5.5))
+        ax = fig.add_subplot(111, projection="3d")
+
+        field_magnitudes = la.norm(field_vectors, axis=1) * GEO_SCALE
+        sensor_plot = ax.scatter(
+            sensor_positions[:, 0],
+            sensor_positions[:, 1],
+            sensor_positions[:, 2],
+            c=field_magnitudes,
+            cmap="Blues",
+            s=sensor_s,
+            label="Sensors",
+        )
+        ax.quiver(
+            sensor_positions[:, 0],
+            sensor_positions[:, 1],
+            sensor_positions[:, 2],
+            field_vectors[:, 0],
+            field_vectors[:, 1],
+            field_vectors[:, 2],
+            color="#4C78A8",
+            length=length,
+            normalize=True,
+            alpha=0.55,
+        )
+
+        ax.scatter(
+            magnets[:, 0],
+            magnets[:, 1],
+            magnets[:, 2],
+            c="#D62728",
+            s=mag_s,
+            label="Magnets",
+            alpha=alpha,
+            depthshade=False,
+        )
+        ax.quiver(
+            magnets[:, 0],
+            magnets[:, 1],
+            magnets[:, 2],
+            moment_vectors[:, 0],
+            moment_vectors[:, 1],
+            moment_vectors[:, 2],
+            color="#D62728",
+            length=length,
+            normalize=True,
+            linewidth=2,
+        )
+
+        for board in self.mts.sensor_boards:
+            center = np.asarray(board.center, dtype=float)
+            ax.quiver(
+                center[0], center[1], center[2],
+                board.normal[0], board.normal[1], board.normal[2],
+                color="#2CA02C",
+                length=length * 3,
+                normalize=True,
+            )
+
+        colorbar = fig.colorbar(sensor_plot, ax=ax, pad=0.1, shrink=0.7)
+        colorbar.set_label("Field Magnitude (µT)")
+        ax.set_xlabel("X (mm)")
+        ax.set_ylabel("Y (mm)")
+        ax.set_zlabel("Z (mm)")
+        plotted_positions = np.vstack((sensor_positions, magnets[:, :NUM_COMPS]))
+        coordinate_ranges = np.ptp(plotted_positions, axis=0)
+        coordinate_ranges[coordinate_ranges == 0] = 1
+        ax.set_box_aspect(coordinate_ranges)
+        ax.set_title("Magnetic Field Visualization")
+        ax.legend(loc="upper left")
+        fig.tight_layout()
+        if show:
+            plt.show()
+        return fig, ax
+
 ###################### SENSOR CLASS ######################
 class Sensor:
     def __init__(self, width, length=None, height=1, spacing=SENSOR_WIDTH, center=(0, 0, 0), angles=(0, 0)):
